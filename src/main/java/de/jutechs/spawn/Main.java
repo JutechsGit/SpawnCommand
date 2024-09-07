@@ -12,6 +12,8 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.util.math.random.Random;
 
+import java.util.concurrent.CompletableFuture;
+
 public class Main implements ModInitializer {
 
     private static final int SEARCH_AREA_RADIUS = 1000; // Adjust the search area radius here
@@ -34,15 +36,19 @@ public class Main implements ModInitializer {
         World world = player.getWorld();
         Random random = (Random) world.random;
 
-        BlockPos safePos = findRandomSafePosition(world, random, SEARCH_AREA_RADIUS);
-
-        if (safePos != null) {
-            // Safeguard for server freezing: limit the number of safe attempts
-            player.teleport((ServerWorld) world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
-            player.sendMessage(Text.of("Teleported to a random safe position!"), false);
-        } else {
-            player.sendMessage(Text.of("No safe position found within the search area!"), false);
-        }
+        // Run the safe position search asynchronously
+        CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, random, SEARCH_AREA_RADIUS))
+                .thenAccept(safePos -> {
+                    // If a safe position is found, teleport the player on the main server thread
+                    if (safePos != null) {
+                        ((ServerWorld) world).getServer().submit(() -> {
+                            player.teleport((ServerWorld) world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
+                            player.sendMessage(Text.of("Teleported to a random safe position!"), false);
+                        });
+                    } else {
+                        player.sendMessage(Text.of("No safe position found within the search area!"), false);
+                    }
+                });
 
         return Command.SINGLE_SUCCESS;
     }
