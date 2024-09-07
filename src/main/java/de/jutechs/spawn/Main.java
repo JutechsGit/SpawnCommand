@@ -8,6 +8,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.util.math.random.Random;
@@ -43,10 +44,10 @@ public class Main implements ModInitializer {
                     if (safePos != null) {
                         ((ServerWorld) world).getServer().submit(() -> {
                             player.teleport((ServerWorld) world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
-                            player.sendMessage(Text.of("Teleported to a random safe position!"), false);
+                            player.sendMessage(Text.of("Teleported to spawn".formatted(Formatting.GOLD)), false);
                         });
                     } else {
-                        player.sendMessage(Text.of("No safe position found within the search area!"), false);
+                        player.sendMessage(Text.of("No safe position found at spawn!".formatted(Formatting.RED)), false);
                     }
                 });
 
