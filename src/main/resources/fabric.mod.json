@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "spawn",
+  "version": "${version}",
+  "name": "Spawn",
+  "description": "A simple command to sign items O:",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/spawn/icon.png",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "de.jutechs.spawn.Main"
+    ]
+  },
+  "mixins": [
+    "spawn.mixins.json",
+    {
+      "config": "spawn.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
