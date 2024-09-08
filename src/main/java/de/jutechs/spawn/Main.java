@@ -1,5 +1,6 @@
 package de.jutechs.spawn;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import com.mojang.brigadier.Command;
 import net.minecraft.fluid.FluidState;
@@ -12,11 +13,15 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.util.math.random.Random;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 
-public class Main implements ModInitializer {
+import static net.fabricmc.loader.impl.FabricLoaderImpl.MOD_ID;
 
+public class Main implements ModInitializer {
+    public static final Logger logger = LoggerFactory.getLogger(MOD_ID);
     @Override
     public void onInitialize() {
         // Load the config
@@ -27,19 +32,36 @@ public class Main implements ModInitializer {
 
         net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("spawn")
-                    .executes(context -> teleportToRandomSafePosition(context.getSource(), searchAreaRadius))
+                    .then(CommandManager.argument("dimension", StringArgumentType.string())
+                            .executes(context -> {
+                                String dimension = StringArgumentType.getString(context, "dimension");
+                                return teleportToRandomSafePosition(context.getSource(), searchAreaRadius, dimension);
+                            })
+                    )
+                    .executes(context -> teleportToRandomSafePosition(context.getSource(), searchAreaRadius, "overworld"))
             );
         });
     }
-
     // Pass the searchAreaRadius as a parameter to the method
-    private static int teleportToRandomSafePosition(ServerCommandSource source, int searchAreaRadius) {
+    private static int teleportToRandomSafePosition(ServerCommandSource source, int searchAreaRadius, String dimension) {
         ServerPlayerEntity player = source.getPlayer();
         if (player == null) {
             return 0; // Not a player
         }
 
-        World world = player.getWorld();
+        // Determine the world based on the dimension argument
+        ServerWorld world;
+        if (dimension.equalsIgnoreCase("nether")) {
+            world = player.getServer().getWorld(World.NETHER);
+        } else if (dimension.equalsIgnoreCase("end")) {
+            world = player.getServer().getWorld(World.END);
+        } else if (dimension.equalsIgnoreCase("overworld")) {
+            world = player.getServer().getWorld(World.OVERWORLD);
+        } else {
+            player.sendMessage(Text.of("Invalid dimension. Using default Overworld.".formatted(Formatting.RED)), false);
+            world = player.getServer().getWorld(World.OVERWORLD); // Default to Overworld
+        }
+
         Random random = (Random) world.random;
 
         // Run the safe position search asynchronously
@@ -47,18 +69,15 @@ public class Main implements ModInitializer {
                 .thenAccept(safePos -> {
                     // If a safe position is found, teleport the player on the main server thread
                     if (safePos != null) {
-                        ((ServerWorld) world).getServer().submit(() -> {
-                            player.teleport((ServerWorld) world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
-                            player.sendMessage(Text.of("Teleported to spawn".formatted(Formatting.GOLD)), false);
-                        });
+                        player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
+                        player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
                     } else {
-                        player.sendMessage(Text.of("No safe position found at spawn!".formatted(Formatting.RED)), false);
+                        player.sendMessage(Text.literal("No safe position found in %s!".formatted(dimension.toUpperCase())).formatted(Formatting.RED), false);
                     }
                 });
 
         return Command.SINGLE_SUCCESS;
     }
-
     private static BlockPos findRandomSafePosition(World world, Random random, int radius) {
         int spawnX = world.getSpawnPos().getX();
         int spawnZ = world.getSpawnPos().getZ();
@@ -68,13 +87,18 @@ public class Main implements ModInitializer {
         int minZ = spawnZ - radius;
         int maxZ = spawnZ + radius;
 
+        // Determine maxY based on the dimension
+        int maxY = (world.getRegistryKey() == World.NETHER) ? 120 : world.getTopY(); // 127 for Nether roof, world.getTopY() for other dimensions
+        int minY = 0; // Adjust if needed
+
         int attempts = 0;
         int maxAttempts = 20; // Reduced to prevent timeouts
 
         while (attempts < maxAttempts) {
             int x = random.nextInt(maxX - minX + 1) + minX;
             int z = random.nextInt(maxZ - minZ + 1) + minZ;
-            BlockPos pos = new BlockPos(x, world.getTopY(), z);
+            int y = random.nextInt(maxY - minY + 1) + minY;
+            BlockPos pos = new BlockPos(x, y, z);
 
             BlockPos safePos = findSafePosition(world, pos, 2); // Adjust the radius here
             if (safePos != null) {
@@ -88,7 +112,16 @@ public class Main implements ModInitializer {
     }
 
     private static BlockPos findSafePosition(World world, BlockPos pos, int radius) {
-        int maxY = world.getTopY();
+        int maxY;
+        if (world.getRegistryKey() == World.NETHER) {
+            maxY = 100; // Height limit for the Nether
+        } else if (world.getRegistryKey() == World.END) {
+            maxY = 100; // Height limit for the End
+        } else {
+            maxY = world.getTopY(); // Regular height limit for other dimensions
+        }
+
+        logger.info(""+ maxY);
         int minY = 0;
 
         for (int y = maxY; y >= minY; y--) {
@@ -102,7 +135,7 @@ public class Main implements ModInitializer {
                     world.getBlockState(testPos.down()).isSolid() &&
                     isSafeFromLiquid(world, testPos, radius)) {
                 return testPos;
-            }
+            }else{logger.info("not save");}
         }
 
         return null; // Return null if no safe position is found
