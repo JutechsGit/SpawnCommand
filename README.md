@@ -6,6 +6,11 @@
 
 - **/spawn Command:** Allows players to savely teleport to a random position near spawn(1000 bock radius).
 
+## Configuration
+Config file will generate automatically as ./config/spawn_config`.json`  
+**Range** is in blocks (only accepts positive whole numbers)  
+**Cooldown** is in milliseconds (5000 milliseconds equal 5 seconds)(only accepts positive whole numbers)  
+*Deleting the file will regenerate.*
 ## Installation
 
 1. **Install Minecraft Fabric:**  
