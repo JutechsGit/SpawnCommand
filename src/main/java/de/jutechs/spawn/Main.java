@@ -17,18 +17,23 @@ import java.util.concurrent.CompletableFuture;
 
 public class Main implements ModInitializer {
 
-    private static final int SEARCH_AREA_RADIUS = 1000; // Adjust the search area radius here
-
     @Override
     public void onInitialize() {
+        // Load the config
+        ConfigManager.loadConfig();
+
+        // Access the range from the config
+        int searchAreaRadius = ConfigManager.config.Range;
+
         net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("spawn")
-                    .executes(context -> teleportToRandomSafePosition(context.getSource()))
+                    .executes(context -> teleportToRandomSafePosition(context.getSource(), searchAreaRadius))
             );
         });
     }
 
-    private static int teleportToRandomSafePosition(ServerCommandSource source) {
+    // Pass the searchAreaRadius as a parameter to the method
+    private static int teleportToRandomSafePosition(ServerCommandSource source, int searchAreaRadius) {
         ServerPlayerEntity player = source.getPlayer();
         if (player == null) {
             return 0; // Not a player
@@ -38,7 +43,7 @@ public class Main implements ModInitializer {
         Random random = (Random) world.random;
 
         // Run the safe position search asynchronously
-        CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, random, SEARCH_AREA_RADIUS))
+        CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, random, searchAreaRadius))
                 .thenAccept(safePos -> {
                     // If a safe position is found, teleport the player on the main server thread
                     if (safePos != null) {
