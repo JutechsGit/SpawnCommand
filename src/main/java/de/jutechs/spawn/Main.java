@@ -121,7 +121,7 @@ public class Main implements ModInitializer {
             maxY = world.getTopY(); // Regular height limit for other dimensions
         }
 
-        logger.info(""+ maxY);
+
         int minY = 0;
 
         for (int y = maxY; y >= minY; y--) {
@@ -135,7 +135,7 @@ public class Main implements ModInitializer {
                     world.getBlockState(testPos.down()).isSolid() &&
                     isSafeFromLiquid(world, testPos, radius)) {
                 return testPos;
-            }else{logger.info("not save");}
+            }
         }
 
         return null; // Return null if no safe position is found
