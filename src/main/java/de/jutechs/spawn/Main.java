@@ -16,12 +16,17 @@ import net.minecraft.util.math.random.Random;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static net.fabricmc.loader.impl.FabricLoaderImpl.MOD_ID;
 
 public class Main implements ModInitializer {
     public static final Logger logger = LoggerFactory.getLogger(MOD_ID);
+    private static final Map<UUID, Long> cooldownMap = new HashMap<>();
     @Override
     public void onInitialize() {
         // Load the config
@@ -48,6 +53,23 @@ public class Main implements ModInitializer {
         if (player == null) {
             return 0; // Not a player
         }
+
+        UUID playerId = player.getUuid();
+        long currentTime = System.currentTimeMillis();
+        long cooldownTime = ConfigManager.config.Cooldown;
+
+        // Check if player is on cooldown
+        if (cooldownMap.containsKey(playerId)) {
+            long lastUseTime = cooldownMap.get(playerId);
+            if (currentTime - lastUseTime < cooldownTime) {
+                long timeLeft = (cooldownTime - (currentTime - lastUseTime)) / 1000;
+                player.sendMessage(Text.literal("Please wait " + timeLeft + " more seconds before using /spawn again.").formatted(Formatting.RED), false);
+                return Command.SINGLE_SUCCESS;
+            }
+        }
+
+        // Update the last use time
+        cooldownMap.put(playerId, currentTime);
 
         // Determine the world based on the dimension argument
         ServerWorld world;
