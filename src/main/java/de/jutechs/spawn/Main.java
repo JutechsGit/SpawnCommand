@@ -4,13 +4,16 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import com.mojang.brigadier.Command;
 import net.minecraft.fluid.FluidState;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
+import net.minecraft.network.packet.s2c.play.TitleFadeS2CPacket;
+import net.minecraft.network.packet.s2c.play.SubtitleS2CPacket;
+import net.minecraft.network.packet.s2c.play.BossBarS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
@@ -60,6 +63,20 @@ public class Main implements ModInitializer {
         });
     }
 
+    public static void sendTitle(ServerPlayerEntity player, String titleText, String subtitleText, int fadeIn, int stay, int fadeOut, Formatting titleColor, Formatting subtitleColor) {
+        // Create title and subtitle text with the specified colors
+        Text title = Text.literal(titleText).formatted(titleColor);   // Title with custom color
+        Text subtitle = Text.literal(subtitleText).formatted(subtitleColor); // Subtitle with custom color
+
+        // Send the title text
+        player.networkHandler.sendPacket(new TitleS2CPacket(title));
+
+        // Send the subtitle text
+        player.networkHandler.sendPacket(new SubtitleS2CPacket(subtitle));
+
+        // Set the fade in, stay, and fade out times
+        player.networkHandler.sendPacket(new TitleFadeS2CPacket(fadeIn, stay, fadeOut));
+    }
     // Pass the searchAreaRadius as a parameter to the method
     private static int teleportToRandomSafePosition(ServerCommandSource source, int searchAreaRadius, String dimension) {
         ServerPlayerEntity player = source.getPlayer();
@@ -123,8 +140,13 @@ public class Main implements ModInitializer {
                 }
 
                 // Send countdown title
-                Text title = Text.literal("Standing still for " + countdown + " seconds").formatted(Formatting.YELLOW);
-                player.sendMessage(title, false);
+
+                Text subtitle = Text.literal("Please stand still for " + countdown + " more seconds").formatted(Formatting.YELLOW );
+                player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal("Teleporting").formatted(Formatting.DARK_PURPLE, Formatting.BOLD)));
+                player.networkHandler.sendPacket(new SubtitleS2CPacket(Text.literal("Please stand still for " + countdown + " more seconds").formatted(Formatting.RED)));
+                player.networkHandler.sendPacket(new TitleFadeS2CPacket(20, 40, 20));
+
+                player.sendMessage(subtitle, false);
 
                 if (countdown == 1 && !hasMoved[0] && !messageSent[0]) {
                     CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, searchAreaRadius))
@@ -133,6 +155,7 @@ public class Main implements ModInitializer {
                                 if (safePos != null) {
                                     player.getServer().execute(() -> {
                                         player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
+                                        sendTitle(player, "Teleporting", "", 20,40,20, Formatting.GREEN, Formatting.GREEN);
                                         player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
                                     });
                                 } else {
