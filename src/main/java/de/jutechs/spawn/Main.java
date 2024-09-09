@@ -11,8 +11,11 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 import java.util.Random;
+
+import net.minecraft.world.chunk.Chunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +31,7 @@ public class Main implements ModInitializer {
     public static final Logger logger = LoggerFactory.getLogger(MOD_ID);
     private static final Map<UUID, Long> cooldownMap = new HashMap<>();
     private static final Random random = new Random();
+
     @Override
     public void onInitialize() {
         // Load the config
@@ -48,6 +52,7 @@ public class Main implements ModInitializer {
             );
         });
     }
+
     // Pass the searchAreaRadius as a parameter to the method
     private static int teleportToRandomSafePosition(ServerCommandSource source, int searchAreaRadius, String dimension) {
         ServerPlayerEntity player = source.getPlayer();
@@ -128,27 +133,45 @@ public class Main implements ModInitializer {
             }
 
             BlockPos pos = new BlockPos(x, y, z);
-            BlockPos safePos = findSafePosition(world, pos, 2); // Adjust the radius here
+            BlockPos safePos = findSafePosition((ServerWorld) world, pos, 2); // Adjust the radius here
             if (safePos != null) {
+              //  logger.info("save");
                 return safePos;
             }
             attempts++;
         }
+        //logger.info("No save");
         return null; // No safe position found after maxAttempts
     }
 
-    private static BlockPos findSafePosition(World world, BlockPos pos, int radius) {
+    private static BlockPos findSafePosition(ServerWorld world, BlockPos pos, int radius) {
         int maxY;
+
+        // Handle Nether and End normally
         if (world.getRegistryKey() == World.NETHER) {
             maxY = 100; // Height limit for the Nether
         } else if (world.getRegistryKey() == World.END) {
             maxY = 100; // Height limit for the End
         } else {
-            maxY = world.getTopY(); // Regular height limit for other dimensions
+            // For the Overworld, ensure the chunk is loaded
+            Chunk chunk = world.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+
+            // Get the top position using the heightmap
+            pos = world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, pos);
+           // logger.info("Checking position :)");
+           // logger.info(pos.toString());
+
+            // Validate the Y-coordinate from the heightmap
+            if (pos.getY() > 0 && isSafeFromLiquid(world, pos, radius)) {
+                return pos; // Return the safe position
+            } else {
+            //    logger.info("Invalid or unsafe position returned by heightmap.");
+                return null; // Return null if position is invalid
+            }
         }
 
+        // Fallback for Nether and End using regular height limits
         int minY = 0;
-
         for (int y = maxY; y >= minY; y--) {
             BlockPos testPos = new BlockPos(pos.getX(), y, pos.getZ());
 
@@ -165,14 +188,18 @@ public class Main implements ModInitializer {
 
     private static boolean isSafeFromLiquid(World world, BlockPos pos, int radius) {
         for (int x = pos.getX() - radius; x <= pos.getX() + radius; x++) {
-            for (int z = pos.getZ() - radius; z <= pos.getZ() + radius; z++) {
-                BlockPos checkPos = new BlockPos(x, pos.getY(), z);
-                FluidState fluidState = world.getFluidState(checkPos);
-                if (!fluidState.isEmpty()) {
-                    return false; // Liquid found nearby
+            for (int y = pos.getY() - radius; y <= pos.getY() + radius; y++) { // Check vertical range
+                for (int z = pos.getZ() - radius; z <= pos.getZ() + radius; z++) {
+                    BlockPos checkPos = new BlockPos(x, y, z);
+                    FluidState fluidState = world.getFluidState(checkPos);
+                    if (!fluidState.isEmpty()) {
+                      //  logger.info("Liquid found at " + checkPos + " :(");
+                        return false; // Liquid found nearby
+                    }
                 }
             }
         }
+       // logger.info("No liquids found");
         return true; // No liquid found nearby
     }
 }
