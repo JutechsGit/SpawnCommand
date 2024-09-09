@@ -4,6 +4,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import com.mojang.brigadier.Command;
 import net.minecraft.fluid.FluidState;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -11,6 +12,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 import java.util.Random;
@@ -24,6 +26,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledFuture;
 
 import static net.fabricmc.loader.impl.FabricLoaderImpl.MOD_ID;
 
@@ -31,6 +37,7 @@ public class Main implements ModInitializer {
     public static final Logger logger = LoggerFactory.getLogger(MOD_ID);
     private static final Map<UUID, Long> cooldownMap = new HashMap<>();
     private static final Random random = new Random();
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     @Override
     public void onInitialize() {
@@ -90,22 +97,62 @@ public class Main implements ModInitializer {
             world = player.getServer().getWorld(World.OVERWORLD); // Default to Overworld
         }
 
-        // Run the safe position search asynchronously
-        CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, searchAreaRadius))
-                .thenAccept(safePos -> {
-                    // If a safe position is found, teleport the player on the main server thread
-                    if (safePos != null) {
-                        player.getServer().execute(() -> {
-                            player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
-                            player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
-                        });
-                    } else {
-                        player.sendMessage(Text.literal("No safe position found in %s!".formatted(dimension.toUpperCase())).formatted(Formatting.RED), false);
-                    }
-                });
+        // Run the countdown and teleportation
+        startCountdownAndTeleport(player, world, searchAreaRadius, dimension);
 
         return Command.SINGLE_SUCCESS;
     }
+    private static void startCountdownAndTeleport(ServerPlayerEntity player, ServerWorld world, int searchAreaRadius, String dimension) {
+        int countdownTime = ConfigManager.config.CombatTagTpDelay; // Countdown time in seconds(default = 5 seconds)
+        Vec3d initialPosition = player.getPos();
+        final ScheduledFuture<?>[] countdownTasks = new ScheduledFuture<?>[countdownTime]; // To cancel tasks
+        final boolean[] hasMoved = {false}; // Flag to check if the player has moved
+        final boolean[] messageSent = {false}; // Flag to ensure the message is sent only once
+
+        for (int i = countdownTime; i > 0; i--) {
+            final int countdown = i;
+            countdownTasks[countdownTime - i] = scheduler.schedule(() -> {
+                if (player.getPos().squaredDistanceTo(initialPosition) > 0.1) { // Check if the player moved
+                    if (!messageSent[0]) {
+                        player.sendMessage(Text.literal("Teleportation canceled due to movement.").formatted(Formatting.RED), false);
+                        messageSent[0] = true; // Ensure the message is sent only once
+                    }
+                    hasMoved[0] = true; // Indicate that the player has moved
+                    cancelRemainingCountdown(countdownTasks);
+                    return;
+                }
+
+                // Send countdown title
+                Text title = Text.literal("Standing still for " + countdown + " seconds").formatted(Formatting.YELLOW);
+                player.sendMessage(title, false);
+
+                if (countdown == 1 && !hasMoved[0] && !messageSent[0]) {
+                    CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, searchAreaRadius))
+                            .thenAccept(safePos -> {
+                                // If a safe position is found, teleport the player
+                                if (safePos != null) {
+                                    player.getServer().execute(() -> {
+                                        player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
+                                        player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
+                                    });
+                                } else {
+                                    player.sendMessage(Text.literal("No safe position found in %s!".formatted(dimension.toUpperCase())).formatted(Formatting.RED), false);
+                                }
+                            });
+                }
+            }, countdownTime - i, TimeUnit.SECONDS);
+        }
+    }
+
+    private static void cancelRemainingCountdown(ScheduledFuture<?>[] tasks) {
+        for (ScheduledFuture<?> task : tasks) {
+            if (task != null && !task.isDone()) {
+                task.cancel(false); // Cancel the task if it's not already completed
+            }
+        }
+    }
+
+
 
     private static BlockPos findRandomSafePosition(World world, int radius) {
         int spawnX = world.getSpawnPos().getX();
