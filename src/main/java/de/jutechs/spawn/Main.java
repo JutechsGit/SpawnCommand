@@ -61,6 +61,18 @@ public class Main implements ModInitializer {
                     .executes(context -> teleportToRandomSafePosition(context.getSource(), searchAreaRadius, "overworld"))
             );
         });
+
+        net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            dispatcher.register(CommandManager.literal("rtp")
+                    .then(CommandManager.argument("dimension", StringArgumentType.string())
+                            .executes(context -> {
+                                String dimension = StringArgumentType.getString(context, "dimension");
+                                return teleportToRandomSafePosition(context.getSource(), 8000000, dimension);
+                            })
+                    )
+                    .executes(context -> teleportToRandomSafePosition(context.getSource(), 8000000, "overworld"))
+            );
+        });
     }
 
     public static void sendTitle(ServerPlayerEntity player, String titleText, String subtitleText, int fadeIn, int stay, int fadeOut, Formatting titleColor, Formatting subtitleColor) {
@@ -153,7 +165,7 @@ public class Main implements ModInitializer {
 
                 player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal("Teleporting").formatted(Formatting.DARK_PURPLE, Formatting.BOLD)));
                 player.networkHandler.sendPacket(new SubtitleS2CPacket(Text.of(subtitleMessage)));
-                logger.info(""+ subtitleMessage);
+                //logger.info(subtitleMessage);
                 player.networkHandler.sendPacket(new TitleFadeS2CPacket(fadeInTicks, stayTicks, fadeOutTicks));
                 if (notifyPlayerChat == false){
                     player.sendMessage(subtitle, false);
