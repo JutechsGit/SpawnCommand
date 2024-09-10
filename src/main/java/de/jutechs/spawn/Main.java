@@ -121,6 +121,7 @@ public class Main implements ModInitializer {
     }
     private static void startCountdownAndTeleport(ServerPlayerEntity player, ServerWorld world, int searchAreaRadius, String dimension) {
         int countdownTime = ConfigManager.config.CombatTagTpDelay; // Countdown time in seconds(default = 5 seconds)
+        boolean notifyPlayerChat = ConfigManager.config.NotifyPlayerChat;
         Vec3d initialPosition = player.getPos();
         final ScheduledFuture<?>[] countdownTasks = new ScheduledFuture<?>[countdownTime]; // To cancel tasks
         final boolean[] hasMoved = {false}; // Flag to check if the player has moved
@@ -140,13 +141,23 @@ public class Main implements ModInitializer {
                 }
 
                 // Send countdown title
-
+                int fadeInTicks = ConfigManager.config.FadeInTicks;
+                int stayTicks = ConfigManager.config.StayTicks;
+                int fadeOutTicks = ConfigManager.config.FadeOutTicks;
                 Text subtitle = Text.literal("Please stand still for " + countdown + " more seconds").formatted(Formatting.YELLOW );
-                player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal("Teleporting").formatted(Formatting.DARK_PURPLE, Formatting.BOLD)));
-                player.networkHandler.sendPacket(new SubtitleS2CPacket(Text.literal("Please stand still for " + countdown + " more seconds").formatted(Formatting.RED)));
-                player.networkHandler.sendPacket(new TitleFadeS2CPacket(20, 40, 20));
+                Text subtitleMessageP1 = Text.literal("Please stand still for ").formatted(Formatting.RED, Formatting.ITALIC);
+                Text subtitleMessageP2 = Text.literal(String.valueOf(countdown)).formatted(Formatting.GOLD, Formatting.ITALIC);
+                Text subtitleMessageP3 = Text.literal(" more seconds").formatted(Formatting.RED, Formatting.ITALIC);
+                Text subtitleMessage = Text.empty().append(subtitleMessageP1).append(subtitleMessageP2).append(subtitleMessageP3);
 
-                player.sendMessage(subtitle, false);
+
+                player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal("Teleporting").formatted(Formatting.DARK_PURPLE, Formatting.BOLD)));
+                player.networkHandler.sendPacket(new SubtitleS2CPacket(Text.of(subtitleMessage)));
+                logger.info(""+ subtitleMessage);
+                player.networkHandler.sendPacket(new TitleFadeS2CPacket(fadeInTicks, stayTicks, fadeOutTicks));
+                if (notifyPlayerChat == false){
+                    player.sendMessage(subtitle, false);
+                }
 
                 if (countdown == 1 && !hasMoved[0] && !messageSent[0]) {
                     CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, searchAreaRadius))
@@ -155,7 +166,7 @@ public class Main implements ModInitializer {
                                 if (safePos != null) {
                                     player.getServer().execute(() -> {
                                         player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
-                                        sendTitle(player, "Teleporting", "", 20,40,20, Formatting.GREEN, Formatting.GREEN);
+                                        sendTitle(player, "Teleporting", "", fadeInTicks,stayTicks,fadeOutTicks, Formatting.GREEN, Formatting.GREEN);
                                         player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
                                     });
                                 } else {
