@@ -38,7 +38,8 @@ import static net.fabricmc.loader.impl.FabricLoaderImpl.MOD_ID;
 
 public class Main implements ModInitializer {
     public static final Logger logger = LoggerFactory.getLogger(MOD_ID);
-    private static final Map<UUID, Long> cooldownMap = new HashMap<>();
+    private static final Map<UUID, Long> SpawncooldownMap = new HashMap<>();
+    private static final Map<UUID, Long> RtpCooldownMap = new HashMap<>();
     private static final Random random = new Random();
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     public static boolean is_Rtp;
@@ -108,8 +109,8 @@ public class Main implements ModInitializer {
             cooldownTime = ConfigManager.config.SpawnCooldown;
         }
         // Check if player is on cooldown
-        if (cooldownMap.containsKey(playerId)) {
-            long lastUseTime = cooldownMap.get(playerId);
+        if (SpawncooldownMap.containsKey(playerId)) {
+            long lastUseTime = SpawncooldownMap.get(playerId);
             if (currentTime - lastUseTime < cooldownTime) {
                 long timeLeft = (cooldownTime - (currentTime - lastUseTime)) / 1000;
                 player.sendMessage(Text.literal("Please wait " + timeLeft + " more seconds before using /spawn again.").formatted(Formatting.RED), false);
@@ -118,7 +119,7 @@ public class Main implements ModInitializer {
         }
 
         // Update the last use time
-        cooldownMap.put(playerId, currentTime);
+        SpawncooldownMap.put(playerId, currentTime);
 
         // Determine the world based on the dimension argument
         ServerWorld world;
@@ -140,10 +141,10 @@ public class Main implements ModInitializer {
     }
     private static void startCountdownAndTeleport(ServerPlayerEntity player, ServerWorld world, int searchAreaRadius, String dimension) {
         int countdownTime;
-        if (is_Rtp){
+        if (is_Rtp) {
             countdownTime = ConfigManager.config.RTPTpDelay;
-        }else {
-            countdownTime = ConfigManager.config.SpawnTpDelay; // Countdown time in seconds(default = 5 seconds)
+        } else {
+            countdownTime = ConfigManager.config.SpawnTpDelay; // Countdown time in seconds (default = 5 seconds)
         }
         boolean notifyPlayerChat = ConfigManager.config.CountdownInChat;
         Vec3d initialPosition = player.getPos();
@@ -168,41 +169,43 @@ public class Main implements ModInitializer {
                 int fadeInTicks = ConfigManager.config.FadeInTicks;
                 int stayTicks = ConfigManager.config.StayTicks;
                 int fadeOutTicks = ConfigManager.config.FadeOutTicks;
-                Text subtitle = Text.literal("Please stand still for " + countdown + " more seconds").formatted(Formatting.YELLOW );
+                Text subtitle = Text.literal("Please stand still for " + countdown + " more seconds").formatted(Formatting.YELLOW);
                 Text subtitleMessageP1 = Text.literal("Please stand still for ").formatted(Formatting.RED, Formatting.ITALIC);
                 Text subtitleMessageP2 = Text.literal(String.valueOf(countdown)).formatted(Formatting.GOLD, Formatting.ITALIC);
                 Text subtitleMessageP3 = Text.literal(" more seconds").formatted(Formatting.RED, Formatting.ITALIC);
                 Text subtitleMessage = Text.empty().append(subtitleMessageP1).append(subtitleMessageP2).append(subtitleMessageP3);
 
-
                 player.networkHandler.sendPacket(new TitleS2CPacket(Text.literal("Teleporting").formatted(Formatting.DARK_PURPLE, Formatting.BOLD)));
                 player.networkHandler.sendPacket(new SubtitleS2CPacket(Text.of(subtitleMessage)));
-                //logger.info(subtitleMessage);
                 player.networkHandler.sendPacket(new TitleFadeS2CPacket(fadeInTicks, stayTicks, fadeOutTicks));
-                if (notifyPlayerChat){
+
+                if (notifyPlayerChat) {
                     player.sendMessage(subtitle, false);
                 }
 
                 if (countdown == 1 && !hasMoved[0] && !messageSent[0]) {
+                    // Async part: Find a random safe position off the main thread
                     CompletableFuture.supplyAsync(() -> findRandomSafePosition(world, searchAreaRadius))
                             .thenAccept(safePos -> {
-                                // If a safe position is found, teleport the player
-                                if (safePos != null) {
-                                    player.getServer().execute(() -> {
-                                        scheduler.schedule(() -> {
-                                            player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
-                                            sendTitle(player, "Teleporting", "", fadeInTicks,stayTicks,fadeOutTicks, Formatting.GREEN, Formatting.GREEN);
-                                            player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
-                                        }, 1000, TimeUnit.MILLISECONDS);
-                                    });
-                                } else {
-                                    player.sendMessage(Text.literal("No safe position found in %s!".formatted(dimension.toUpperCase())).formatted(Formatting.RED), false);
-                                }
+                                scheduler.schedule(() -> {
+                                    sendTitle(player, "Teleporting", "", fadeInTicks, stayTicks, fadeOutTicks, Formatting.GREEN, Formatting.GREEN);
+                                    player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
+
+                                player.getServer().execute(() -> {
+                                    if (safePos != null) {
+                                        player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
+                                    } else {
+                                        player.sendMessage(Text.literal("No safe position found in %s!".formatted(dimension.toUpperCase())).formatted(Formatting.RED), false);
+                                    }
+                                });
+                                }, 1, TimeUnit.SECONDS);
                             });
+
                 }
             }, countdownTime - i, TimeUnit.SECONDS);
         }
     }
+
 
     private static void cancelRemainingCountdown(ScheduledFuture<?>[] tasks) {
         for (ScheduledFuture<?> task : tasks) {
