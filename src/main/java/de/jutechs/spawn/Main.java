@@ -118,8 +118,7 @@ public class Main implements ModInitializer {
             }
         }
 
-        // Update the last use time
-        SpawncooldownMap.put(playerId, currentTime);
+
 
         // Determine the world based on the dimension argument
         ServerWorld world;
@@ -197,6 +196,10 @@ public class Main implements ModInitializer {
                                     } else {
                                         player.sendMessage(Text.literal("No safe position found in %s!".formatted(dimension.toUpperCase())).formatted(Formatting.RED), false);
                                     }
+                                    // Update the last use time
+                                    UUID playerId = player.getUuid();
+                                    long currentTime = System.currentTimeMillis();
+                                    SpawncooldownMap.put(playerId, currentTime);
                                 });
                                 }, 1, TimeUnit.SECONDS);
                             });
