@@ -3,11 +3,11 @@ package de.jutechs.spawn;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import com.mojang.brigadier.Command;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
 import net.minecraft.network.packet.s2c.play.TitleFadeS2CPacket;
 import net.minecraft.network.packet.s2c.play.SubtitleS2CPacket;
-import net.minecraft.network.packet.s2c.play.BossBarS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
@@ -41,6 +41,7 @@ public class Main implements ModInitializer {
     private static final Map<UUID, Long> cooldownMap = new HashMap<>();
     private static final Random random = new Random();
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    public static boolean is_Rtp;
 
     @Override
     public void onInitialize() {
@@ -48,12 +49,13 @@ public class Main implements ModInitializer {
         ConfigManager.loadConfig();
 
         // Access the range from the config
-        int searchAreaRadius = ConfigManager.config.Range;
+        int searchAreaRadius = ConfigManager.config.SpawnRange;
 
-        net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("spawn")
                     .then(CommandManager.argument("dimension", StringArgumentType.string())
                             .executes(context -> {
+                                is_Rtp = false;
                                 String dimension = StringArgumentType.getString(context, "dimension");
                                 return teleportToRandomSafePosition(context.getSource(), searchAreaRadius, dimension);
                             })
@@ -62,11 +64,11 @@ public class Main implements ModInitializer {
             );
         });
         int rTPRange = ConfigManager.config.RTPRange;
-        net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("rtp")
                     .then(CommandManager.argument("dimension", StringArgumentType.string())
                             .executes(context -> {
-
+                                is_Rtp = true;
                                 String dimension = StringArgumentType.getString(context, "dimension");
                                 return teleportToRandomSafePosition(context.getSource(), rTPRange, dimension);
                             })
@@ -99,8 +101,12 @@ public class Main implements ModInitializer {
 
         UUID playerId = player.getUuid();
         long currentTime = System.currentTimeMillis();
-        long cooldownTime = ConfigManager.config.Cooldown;
-
+        long cooldownTime;
+        if (is_Rtp){
+            cooldownTime = ConfigManager.config.RTPCooldown;
+        } else {
+            cooldownTime = ConfigManager.config.SpawnCooldown;
+        }
         // Check if player is on cooldown
         if (cooldownMap.containsKey(playerId)) {
             long lastUseTime = cooldownMap.get(playerId);
@@ -133,8 +139,13 @@ public class Main implements ModInitializer {
         return Command.SINGLE_SUCCESS;
     }
     private static void startCountdownAndTeleport(ServerPlayerEntity player, ServerWorld world, int searchAreaRadius, String dimension) {
-        int countdownTime = ConfigManager.config.CombatTagTpDelay; // Countdown time in seconds(default = 5 seconds)
-        boolean notifyPlayerChat = ConfigManager.config.NotifyPlayerChat;
+        int countdownTime;
+        if (is_Rtp){
+            countdownTime = ConfigManager.config.RTPTpDelay;
+        }else {
+            countdownTime = ConfigManager.config.SpawnTpDelay; // Countdown time in seconds(default = 5 seconds)
+        }
+        boolean notifyPlayerChat = ConfigManager.config.CountdownInChat;
         Vec3d initialPosition = player.getPos();
         final ScheduledFuture<?>[] countdownTasks = new ScheduledFuture<?>[countdownTime]; // To cancel tasks
         final boolean[] hasMoved = {false}; // Flag to check if the player has moved
@@ -168,7 +179,7 @@ public class Main implements ModInitializer {
                 player.networkHandler.sendPacket(new SubtitleS2CPacket(Text.of(subtitleMessage)));
                 //logger.info(subtitleMessage);
                 player.networkHandler.sendPacket(new TitleFadeS2CPacket(fadeInTicks, stayTicks, fadeOutTicks));
-                if (notifyPlayerChat == false){
+                if (notifyPlayerChat){
                     player.sendMessage(subtitle, false);
                 }
 
@@ -178,9 +189,11 @@ public class Main implements ModInitializer {
                                 // If a safe position is found, teleport the player
                                 if (safePos != null) {
                                     player.getServer().execute(() -> {
-                                        player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
-                                        sendTitle(player, "Teleporting", "", fadeInTicks,stayTicks,fadeOutTicks, Formatting.GREEN, Formatting.GREEN);
-                                        player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
+                                        scheduler.schedule(() -> {
+                                            player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
+                                            sendTitle(player, "Teleporting", "", fadeInTicks,stayTicks,fadeOutTicks, Formatting.GREEN, Formatting.GREEN);
+                                            player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
+                                        }, 1000, TimeUnit.MILLISECONDS);
                                     });
                                 } else {
                                     player.sendMessage(Text.literal("No safe position found in %s!".formatted(dimension.toUpperCase())).formatted(Formatting.RED), false);
