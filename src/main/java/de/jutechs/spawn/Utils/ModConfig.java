@@ -1,4 +1,4 @@
-package de.jutechs.spawn;
+package de.jutechs.spawn.Utils;
 
 public class ModConfig {
     public int SpawnRange = 1000;

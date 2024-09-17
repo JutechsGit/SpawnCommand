@@ -1,6 +1,8 @@
 package de.jutechs.spawn;
 
+import de.jutechs.spawn.Commands.*;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import de.jutechs.spawn.Utils.ConfigManager;
 import net.fabricmc.api.ModInitializer;
 import com.mojang.brigadier.Command;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -38,48 +40,26 @@ import static net.fabricmc.loader.impl.FabricLoaderImpl.MOD_ID;
 
 public class Main implements ModInitializer {
     public static final Logger logger = LoggerFactory.getLogger(MOD_ID);
-    private static final Map<UUID, Long> SpawncooldownMap = new HashMap<>();
+    public static final Map<UUID, Long> SpawncooldownMap = new HashMap<>();
     private static final Map<UUID, Long> RtpCooldownMap = new HashMap<>();
     private static final Random random = new Random();
-    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    public static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     public static boolean is_Rtp;
+
 
     @Override
     public void onInitialize() {
         // Load the config
         ConfigManager.loadConfig();
+        RTPCommand.registerRTPCommand();
+        SpawnCommand.registerSpawnCommand();
 
         // Access the range from the config
-        int searchAreaRadius = ConfigManager.config.SpawnRange;
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("spawn")
-                    .then(CommandManager.argument("dimension", StringArgumentType.string())
-                            .executes(context -> {
-                                is_Rtp = false;
-                                String dimension = StringArgumentType.getString(context, "dimension");
-                                return teleportToRandomSafePosition(context.getSource(), searchAreaRadius, dimension);
-                            })
-                    )
-                    .executes(context -> teleportToRandomSafePosition(context.getSource(), searchAreaRadius, "overworld"))
-            );
-        });
-        int rTPRange = ConfigManager.config.RTPRange;
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("rtp")
-                    .then(CommandManager.argument("dimension", StringArgumentType.string())
-                            .executes(context -> {
-                                is_Rtp = true;
-                                String dimension = StringArgumentType.getString(context, "dimension");
-                                return teleportToRandomSafePosition(context.getSource(), rTPRange, dimension);
-                            })
-                    )
-                    .executes(context -> teleportToRandomSafePosition(context.getSource(), rTPRange, "overworld"))
-            );
-        });
     }
+}
 
-    public static void sendTitle(ServerPlayerEntity player, String titleText, String subtitleText, int fadeIn, int stay, int fadeOut, Formatting titleColor, Formatting subtitleColor) {
+/*    public static void sendTitle(ServerPlayerEntity player, String titleText, String subtitleText, int fadeIn, int stay, int fadeOut, Formatting titleColor, Formatting subtitleColor) {
         // Create title and subtitle text with the specified colors
         Text title = Text.literal(titleText).formatted(titleColor);   // Title with custom color
         Text subtitle = Text.literal(subtitleText).formatted(subtitleColor); // Subtitle with custom color
@@ -94,7 +74,7 @@ public class Main implements ModInitializer {
         player.networkHandler.sendPacket(new TitleFadeS2CPacket(fadeIn, stay, fadeOut));
     }
     // Pass the searchAreaRadius as a parameter to the method
-    private static int teleportToRandomSafePosition(ServerCommandSource source, int searchAreaRadius, String dimension) {
+    public static int teleportToRandomSafePosition(ServerCommandSource source, int searchAreaRadius, String dimension) {
         ServerPlayerEntity player = source.getPlayer();
         if (player == null) {
             return 0; // Not a player
@@ -316,3 +296,5 @@ public class Main implements ModInitializer {
         return true; // No liquid found nearby
     }
 }
+
+ */

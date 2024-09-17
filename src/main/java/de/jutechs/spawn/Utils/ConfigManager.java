@@ -1,4 +1,4 @@
-package de.jutechs.spawn;
+package de.jutechs.spawn.Utils;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
