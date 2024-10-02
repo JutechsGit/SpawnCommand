@@ -20,10 +20,7 @@ import net.minecraft.world.chunk.Chunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 
 import static de.jutechs.spawn.Main.previousPositionMap;
@@ -89,14 +86,14 @@ public class SpawnARTPCommand {
 
         ServerWorld world;
         if (dimension.equalsIgnoreCase("nether")) {
-            world = player.getServer().getWorld(World.NETHER);
+            world = Objects.requireNonNull(player.getServer()).getWorld(World.NETHER);
         } else if (dimension.equalsIgnoreCase("end")) {
-            world = player.getServer().getWorld(World.END);
+            world = Objects.requireNonNull(player.getServer()).getWorld(World.END);
         } else if (dimension.equalsIgnoreCase("overworld")) {
-            world = player.getServer().getWorld(World.OVERWORLD);
+            world = Objects.requireNonNull(player.getServer()).getWorld(World.OVERWORLD);
         } else {
-            player.sendMessage(Text.of("Invalid dimension. Using default Overworld.".formatted(Formatting.RED)), false);
-            world = player.getServer().getWorld(World.OVERWORLD); // Default to Overworld
+            player.sendMessage(Text.literal("Invalid dimension. Using default Overworld.").formatted(Formatting.RED), false);
+            world = Objects.requireNonNull(player.getServer()).getWorld(World.OVERWORLD); // Default to Overworld
         }
 
 
@@ -159,7 +156,7 @@ public class SpawnARTPCommand {
                                     sendTitle(player, "Teleporting", "", fadeInTicks, stayTicks, fadeOutTicks, Formatting.GREEN, Formatting.GREEN);
                                     player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
 
-                                    player.getServer().execute(() -> {
+                                    Objects.requireNonNull(player.getServer()).execute(() -> {
                                         if (safePos != null) {
                                             player.teleport(world, safePos.getX(), safePos.getY(), safePos.getZ(), player.getYaw(), player.getPitch());
                                         } else {
