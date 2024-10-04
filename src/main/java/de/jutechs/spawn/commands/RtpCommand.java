@@ -1,6 +1,6 @@
 package de.jutechs.spawn.commands;
 
-import de.jutechs.spawn.BackPositionManager;
+import de.jutechs.spawn.utils.BackPositionManager;
 import de.jutechs.spawn.utils.SafePosition;
 import de.jutechs.spawn.utils.TeleportationManager;
 import de.jutechs.spawn.utils.TitleUtils;

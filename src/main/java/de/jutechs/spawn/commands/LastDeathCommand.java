@@ -1,7 +1,7 @@
 package de.jutechs.spawn.commands;
 
-import de.jutechs.spawn.BackPositionManager;
-import de.jutechs.spawn.DeathPositionManager;
+import de.jutechs.spawn.utils.BackPositionManager;
+import de.jutechs.spawn.utils.DeathPositionManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.BlockPos;
