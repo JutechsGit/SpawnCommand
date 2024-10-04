@@ -1,15 +1,19 @@
 package de.jutechs.spawn;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
+import de.jutechs.spawn.commands.LastDeathCommand;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Pair;
 import net.minecraft.util.math.BlockPos;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+
+import static de.jutechs.spawn.commands.BackCommand.startCountdownAndTeleportBack;
 import static de.jutechs.spawn.commands.SpawnARTPCommand.teleportToRandomSafePosition;
 
 public class Main implements ModInitializer {
@@ -51,7 +55,7 @@ public class Main implements ModInitializer {
             );
         });
 
-/*        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("back")
                     .executes(context -> {
                         ServerPlayerEntity player = context.getSource().getPlayer();
@@ -61,7 +65,15 @@ public class Main implements ModInitializer {
             );
 
         });
-        */
+
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            dispatcher.register(CommandManager.literal("lastdeath")
+                    .executes(context -> LastDeathCommand.teleportToLastDeath(context.getSource())) // Teleportiert den Spieler zur letzten Todesposition
+            );
+        });
+
+        DeathPositionManager.registerDeathEvent();
+
 
     }
 }

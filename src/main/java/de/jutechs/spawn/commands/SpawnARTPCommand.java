@@ -1,6 +1,7 @@
 package de.jutechs.spawn.commands;
 
 import com.mojang.brigadier.Command;
+import de.jutechs.spawn.BackPositionManager;
 import de.jutechs.spawn.ConfigManager;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.network.packet.s2c.play.SubtitleS2CPacket;
@@ -17,6 +18,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
+import org.apache.logging.log4j.core.jmx.Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -151,7 +153,7 @@ public class SpawnARTPCommand {
                             .thenAccept(safePos -> {
                                 scheduler.schedule(() -> {
                                     UUID playerId = player.getUuid();
-                                    previousPositionMap.put(playerId, new Pair<>(world, player.getBlockPos()));
+                                    BackPositionManager.setPreviousPosition(playerId, (ServerWorld) player.getWorld(), player.getBlockPos());
 
                                     sendTitle(player, "Teleporting", "", fadeInTicks, stayTicks, fadeOutTicks, Formatting.GREEN, Formatting.GREEN);
                                     player.sendMessage(Text.literal("Teleported to %s".formatted(dimension.toUpperCase())).formatted(Formatting.GOLD), false);
