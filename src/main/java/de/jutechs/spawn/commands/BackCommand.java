@@ -96,6 +96,8 @@ public class BackCommand {
                     }
                 }, countdownTime - i, TimeUnit.SECONDS);
             }
+        }else{
+            player.sendMessage(Text.literal("You seem to not have been teleporting lately!").formatted(Formatting.RED));
         }
     }
     // if player moves cancel the countdown
