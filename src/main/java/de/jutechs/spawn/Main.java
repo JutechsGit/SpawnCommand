@@ -1,64 +1,127 @@
 package de.jutechs.spawn;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
-import de.jutechs.spawn.commands.SpawnCommand;
-import de.jutechs.spawn.commands.RtpCommand;
-import de.jutechs.spawn.commands.BackCommand;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import de.jutechs.spawn.commands.LastDeathCommand;
-import de.jutechs.spawn.utils.DeathPositionManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.command.CommandSource;
-import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
+import net.minecraft.util.Pair;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+import static com.mojang.brigadier.Command.SINGLE_SUCCESS;
+import static net.minecraft.server.command.CommandManager.literal;
+import static net.minecraft.server.command.CommandManager.argument;
+import static net.minecraft.command.CommandSource.suggestMatching;
+import static de.jutechs.spawn.commands.BackCommand.startCountdownAndTeleportBack;
+import static de.jutechs.spawn.commands.SpawnARTPCommand.teleportToRandomSafePosition;
 
 public class Main implements ModInitializer {
 
+    public static boolean is_Rtp;
+    public static final Map<UUID, Pair<ServerWorld, BlockPos>> previousPositionMap = new HashMap<>();
+
     @Override
     public void onInitialize() {
-        // Lade die Konfiguration
         ConfigManager.loadConfig();
 
-        int spawnRadius = ConfigManager.config.SpawnRange;
-        int rtpRadius = ConfigManager.config.RTPRange;
+        int searchAreaRadius = ConfigManager.config.SpawnRange;
 
-        // Registriere den /spawn Befehl
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("spawn")
-                    .then(CommandManager.argument("dimension", StringArgumentType.string())
-                            .suggests((context, builder) -> CommandSource.suggestMatching(new String[]{"overworld", "nether", "end"}, builder)) // Tab-Vervollständigung
-                            .executes(context -> SpawnCommand.teleportToSpawn(context.getSource(), spawnRadius, StringArgumentType.getString(context, "dimension"))))
-                    .executes(context -> SpawnCommand.teleportToSpawn(context.getSource(), spawnRadius, "overworld")) // Standardmäßig Overworld
-            );
-        });
+        // Tab-Vervollständigung für Dimensionen (Expression Lambda)
+        SuggestionProvider<ServerCommandSource> dimensionSuggestions = (context, builder) ->
+                suggestMatching(new String[]{"overworld", "nether", "end"}, builder);
 
-        // Registriere den /rtp Befehl
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("rtp")
-                    .then(CommandManager.argument("dimension", StringArgumentType.string())
-                            .suggests((context, builder) -> CommandSource.suggestMatching(new String[]{"overworld", "nether", "end"}, builder)) // Tab-Vervollständigung
-                            .executes(context -> RtpCommand.teleportToRandomPosition(context.getSource(), rtpRadius, StringArgumentType.getString(context, "dimension"))))
-                    .executes(context -> RtpCommand.teleportToRandomPosition(context.getSource(), rtpRadius, "overworld")) // Standardmäßig Overworld
-            );
-        });
+        // Registrierung des /spawn-Befehls mit automatischer Dimensionswahl
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+                dispatcher.register(literal("spawn")
+                        .then(argument("dimension", StringArgumentType.string())
+                                .suggests(dimensionSuggestions)
+                                .executes(context -> {
+                                    is_Rtp = false;
+                                    String dimension = StringArgumentType.getString(context, "dimension");
+                                    return teleportToRandomSafePosition(context.getSource(), searchAreaRadius, dimension);
+                                })
+                        )
+                        .executes(context -> {
+                            ServerPlayerEntity player = context.getSource().getPlayer();
+                            if (player == null) {
+                                context.getSource().sendError(Text.literal("Player not found."));
+                                return 0;  // Rückgabe bei fehlendem Spieler
+                            }
+                            String currentDimension = getPlayerDimension(player);  // Holen der aktuellen Dimension
+                            return teleportToRandomSafePosition(context.getSource(), searchAreaRadius, currentDimension);
+                        })
+                )
+        );
 
-        // Registriere den /back Befehl
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("back")
-                    .executes(context -> BackCommand.teleportBack(context.getSource())) // Teleportiert den Spieler zurück zur letzten Position
-            );
-        });
+        int rTPRange = ConfigManager.config.RTPRange;
 
-        // Registriere den /lastdeath Befehl
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("lastdeath")
-                    .executes(context -> LastDeathCommand.teleportToLastDeath(context.getSource())) // Teleportiert den Spieler zur letzten Todesposition
-            );
-        });
+        // Registrierung des /rtp-Befehls mit automatischer Dimensionswahl
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+                dispatcher.register(literal("rtp")
+                        .then(argument("dimension", StringArgumentType.string())
+                                .suggests(dimensionSuggestions)
+                                .executes(context -> {
+                                    is_Rtp = true;
+                                    String dimension = StringArgumentType.getString(context, "dimension");
+                                    return teleportToRandomSafePosition(context.getSource(), rTPRange, dimension);
+                                })
+                        )
+                        .executes(context -> {
+                            ServerPlayerEntity player = context.getSource().getPlayer();
+                            if (player == null) {
+                                context.getSource().sendError(Text.literal("Player not found."));
+                                return 0;  // Rückgabe bei fehlendem Spieler
+                            }
+                            String currentDimension = getPlayerDimension(player);  // Holen der aktuellen Dimension
+                            return teleportToRandomSafePosition(context.getSource(), rTPRange, currentDimension);
+                        })
+                )
+        );
 
-        // Registriere das Todesereignis (für /lastdeath)
+        // Registrierung des /back-Befehls
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+                dispatcher.register(literal("back")
+                        .executes(context -> {
+                            ServerPlayerEntity player = context.getSource().getPlayer();
+                            if (player == null) {
+                                context.getSource().sendError(Text.literal("Player not found."));
+                                return 0;  // Rückgabe bei fehlendem Spieler
+                            }
+                            startCountdownAndTeleportBack(player);
+                            return SINGLE_SUCCESS;
+                        })
+                )
+        );
+
+        // Registrierung des /lastdeath-Befehls
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
+                dispatcher.register(literal("lastdeath")
+                        .executes(context -> LastDeathCommand.teleportToLastDeath(context.getSource())) // Teleportiert den Spieler zur letzten Todesposition
+                )
+        );
+
+        // Registrierung des Death Events
         DeathPositionManager.registerDeathEvent();
+    }
 
-        // Debugging-Nachricht zur Überprüfung, ob die Registrierung erfolgreich war
-        System.out.println("All commands registered successfully!");
+    // Methode zur Ermittlung der aktuellen Dimension des Spielers
+    private String getPlayerDimension(ServerPlayerEntity player) {
+        World world = player.getWorld();
+        if (world.getRegistryKey() == World.NETHER) {
+            return "nether";
+        } else if (world.getRegistryKey() == World.END) {
+            return "end";
+        } else {
+            return "overworld";
+        }
     }
 }
