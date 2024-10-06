@@ -34,7 +34,6 @@ public class SpawnARTPCommand {
     private static final Map<UUID, Long> RtpCooldownMap = new HashMap<>();
     static final Map<UUID, Boolean> teleportInProgressMap = new HashMap<>();
 
-    // Verwendung von ThreadLocalRandom anstelle von Random
     private static final ThreadLocalRandom random = ThreadLocalRandom.current();
 
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
@@ -195,7 +194,6 @@ public class SpawnARTPCommand {
         while (attempts < maxAttempts) {
             int x, y, z;
 
-            // Verwendung von ThreadLocalRandom für die Zufallswerte
             x = random.nextInt(maxX - minX + 1) + minX;
             z = random.nextInt(maxZ - minZ + 1) + minZ;
             y = random.nextInt(maxY - minY + 1) + minY;
@@ -221,7 +219,7 @@ public class SpawnARTPCommand {
             Chunk chunk = world.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
             pos = world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, pos);
 
-            if (pos.getY() > 0 && isSafeFromLiquid(world, pos, radius)) {
+            if (pos.getY() > 0 && isSafeFromLiquid(world, pos)) {
                 return pos;
             } else {
                 return null;
@@ -234,7 +232,7 @@ public class SpawnARTPCommand {
 
             if (world.getBlockState(testPos.up()).isAir() &&
                     world.getBlockState(testPos.down()).isSolid() &&
-                    isSafeFromLiquid(world, testPos, radius)) {
+                    isSafeFromLiquid(world, testPos)) {
                 return testPos;
             }
         }
@@ -242,18 +240,57 @@ public class SpawnARTPCommand {
         return null;
     }
 
-    private static boolean isSafeFromLiquid(World world, BlockPos pos, int radius) {
-        for (int x = pos.getX() - radius; x <= pos.getX() + radius; x++) {
-            for (int y = pos.getY() - radius; y <= pos.getY() + radius; y++) {
-                for (int z = pos.getZ() - radius; z <= pos.getZ() + radius; z++) {
-                    BlockPos checkPos = new BlockPos(x, y, z);
-                    FluidState fluidState = world.getFluidState(checkPos);
-                    if (!fluidState.isEmpty()) {
-                        return false;
-                    }
+    // Optimierte Prüfung auf Flüssigkeit, inklusive der Blöcke neben dem Spieler
+    private static boolean isSafeFromLiquid(World world, BlockPos pos) {
+        int x = pos.getX();
+        int y = pos.getY();
+        int z = pos.getZ();
+
+        // Prüfe den Block unter dem Spieler
+        BlockPos belowPos = new BlockPos(x, y - 1, z);
+        if (!world.getFluidState(belowPos).isEmpty()) {
+            return false;  // Flüssigkeit im Bodenblock gefunden
+        }
+
+        // Prüfe den Block, auf dem der Spieler steht
+        BlockPos currentPos = new BlockPos(x, y, z);
+        if (!world.getFluidState(currentPos).isEmpty()) {
+            return false;  // Flüssigkeit im aktuellen Block gefunden
+        }
+
+        // Prüfe den Block über dem Spieler
+        BlockPos abovePos = new BlockPos(x, y + 1, z);
+        if (!world.getFluidState(abovePos).isEmpty()) {
+            return false;  // Flüssigkeit im oberen Block gefunden
+        }
+
+        // Prüfe die angrenzenden Blöcke in derselben Höhe (X- und Z-Koordinaten)
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+
+                // Seitliche Blöcke in derselben Höhe wie der Spieler
+                BlockPos sidePos = new BlockPos(x + dx, y, z + dz);
+                if (!world.getFluidState(sidePos).isEmpty()) {
+                    return false;  // Flüssigkeit in einem angrenzenden Block gefunden
+                }
+
+                // Seitliche Blöcke direkt über dem Spieler
+                BlockPos sideAbovePos = new BlockPos(x + dx, y + 1, z + dz);
+                if (!world.getFluidState(sideAbovePos).isEmpty()) {
+                    return false;  // Flüssigkeit in einem angrenzenden Block direkt über dem Spieler gefunden
+                }
+
+                // Seitliche Blöcke direkt unter dem Spieler
+                BlockPos sideBelowPos = new BlockPos(x + dx, y - 1, z + dz);
+                if (!world.getFluidState(sideBelowPos).isEmpty()) {
+                    return false;  // Flüssigkeit in einem angrenzenden Block direkt unter dem Spieler gefunden
                 }
             }
         }
-        return true;
+
+        return true;  // Keine Flüssigkeit gefunden, Position ist sicher
     }
 }
