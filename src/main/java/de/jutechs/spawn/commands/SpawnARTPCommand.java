@@ -12,13 +12,12 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.Pair;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
-import org.apache.logging.log4j.core.jmx.Server;
+import java.util.concurrent.ThreadLocalRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,12 +33,14 @@ public class SpawnARTPCommand {
     static final Map<UUID, Long> SpawncooldownMap = new HashMap<>();
     private static final Map<UUID, Long> RtpCooldownMap = new HashMap<>();
     static final Map<UUID, Boolean> teleportInProgressMap = new HashMap<>();
-    private static final Random random = new Random();
+
+    // Verwendung von ThreadLocalRandom anstelle von Random
+    private static final ThreadLocalRandom random = ThreadLocalRandom.current();
+
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     public static boolean is_Rtp;
 
     public static void sendTitle(ServerPlayerEntity player, String titleText, String subtitleText, int fadeIn, int stay, int fadeOut, Formatting titleColor, Formatting subtitleColor) {
-
         Text title = Text.literal(titleText).formatted(titleColor);
         Text subtitle = Text.literal(subtitleText).formatted(subtitleColor);
 
@@ -58,19 +59,17 @@ public class SpawnARTPCommand {
         long currentTime = System.currentTimeMillis();
         long cooldownTime;
 
-
         if (teleportInProgressMap.getOrDefault(playerId, false)) {
             player.sendMessage(Text.literal("Teleportation already in progress. Please wait.")
                     .formatted(Formatting.RED), false);
             return Command.SINGLE_SUCCESS;
         }
 
-        if (is_Rtp){
+        if (is_Rtp) {
             cooldownTime = ConfigManager.config.RTPCooldown;
         } else {
             cooldownTime = ConfigManager.config.SpawnCooldown;
         }
-
 
         if (SpawncooldownMap.containsKey(playerId)) {
             long lastUseTime = SpawncooldownMap.get(playerId);
@@ -82,9 +81,7 @@ public class SpawnARTPCommand {
             }
         }
 
-
         teleportInProgressMap.put(playerId, true);
-
 
         ServerWorld world;
         if (dimension.equalsIgnoreCase("nether")) {
@@ -97,7 +94,6 @@ public class SpawnARTPCommand {
             player.sendMessage(Text.literal("Invalid dimension. Using default Overworld.").formatted(Formatting.RED), false);
             world = Objects.requireNonNull(player.getServer()).getWorld(World.OVERWORLD); // Default to Overworld
         }
-
 
         startCountdownAndTeleport(player, world, searchAreaRadius, dimension);
 
@@ -132,7 +128,6 @@ public class SpawnARTPCommand {
                     teleportInProgressMap.put(player.getUuid(), false);
                     return;
                 }
-
 
                 int fadeInTicks = ConfigManager.config.FadeInTicks;
                 int stayTicks = ConfigManager.config.StayTicks;
@@ -182,8 +177,6 @@ public class SpawnARTPCommand {
         }
     }
 
-
-
     private static BlockPos findRandomSafePosition(World world, int radius) {
         int spawnX = world.getSpawnPos().getX();
         int spawnZ = world.getSpawnPos().getZ();
@@ -192,7 +185,6 @@ public class SpawnARTPCommand {
         int maxX = spawnX + radius;
         int minZ = spawnZ - radius;
         int maxZ = spawnZ + radius;
-
 
         int maxY = (world.getRegistryKey() == World.NETHER) ? 120 : world.getTopY();
         int minY = 0;
@@ -203,55 +195,42 @@ public class SpawnARTPCommand {
         while (attempts < maxAttempts) {
             int x, y, z;
 
-            synchronized (random) {
-                x = random.nextInt(maxX - minX + 1) + minX;
-                z = random.nextInt(maxZ - minZ + 1) + minZ;
-                y = random.nextInt(maxY - minY + 1) + minY;
-            }
+            // Verwendung von ThreadLocalRandom für die Zufallswerte
+            x = random.nextInt(maxX - minX + 1) + minX;
+            z = random.nextInt(maxZ - minZ + 1) + minZ;
+            y = random.nextInt(maxY - minY + 1) + minY;
 
             BlockPos pos = new BlockPos(x, y, z);
             BlockPos safePos = findSafePosition((ServerWorld) world, pos, 2);
             if (safePos != null) {
-                //  logger.info("save");
                 return safePos;
             }
             attempts++;
         }
-        //logger.info("No save");
         return null;
     }
 
     private static BlockPos findSafePosition(ServerWorld world, BlockPos pos, int radius) {
         int maxY;
 
-
         if (world.getRegistryKey() == World.NETHER) {
             maxY = 100;
         } else if (world.getRegistryKey() == World.END) {
             maxY = 100;
         } else {
-
             Chunk chunk = world.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-
-
             pos = world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, pos);
-            // logger.info("Checking position :)");
-            // logger.info(pos.toString());
-
 
             if (pos.getY() > 0 && isSafeFromLiquid(world, pos, radius)) {
                 return pos;
             } else {
-                //    logger.info("Invalid or unsafe position returned by heightmap.");
                 return null;
             }
         }
 
-
         int minY = 0;
         for (int y = maxY; y >= minY; y--) {
             BlockPos testPos = new BlockPos(pos.getX(), y, pos.getZ());
-
 
             if (world.getBlockState(testPos.up()).isAir() &&
                     world.getBlockState(testPos.down()).isSolid() &&
@@ -270,13 +249,11 @@ public class SpawnARTPCommand {
                     BlockPos checkPos = new BlockPos(x, y, z);
                     FluidState fluidState = world.getFluidState(checkPos);
                     if (!fluidState.isEmpty()) {
-                        //  logger.info("Liquid found at " + checkPos + " :(");
                         return false;
                     }
                 }
             }
         }
-        // logger.info("No liquids found");
         return true;
     }
 }
