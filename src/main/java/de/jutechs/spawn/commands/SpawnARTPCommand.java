@@ -12,13 +12,17 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.Pair;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
+import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.Chunk;
-import org.apache.logging.log4j.core.jmx.Server;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.Registry;
+import net.minecraft.util.Identifier;
+import net.minecraft.registry.RegistryKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,12 +38,13 @@ public class SpawnARTPCommand {
     static final Map<UUID, Long> SpawncooldownMap = new HashMap<>();
     private static final Map<UUID, Long> RtpCooldownMap = new HashMap<>();
     static final Map<UUID, Boolean> teleportInProgressMap = new HashMap<>();
-    private static final Random random = new Random();
+
+    private static final ThreadLocalRandom random = ThreadLocalRandom.current();
+
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     public static boolean is_Rtp;
 
     public static void sendTitle(ServerPlayerEntity player, String titleText, String subtitleText, int fadeIn, int stay, int fadeOut, Formatting titleColor, Formatting subtitleColor) {
-
         Text title = Text.literal(titleText).formatted(titleColor);
         Text subtitle = Text.literal(subtitleText).formatted(subtitleColor);
 
@@ -58,19 +63,17 @@ public class SpawnARTPCommand {
         long currentTime = System.currentTimeMillis();
         long cooldownTime;
 
-
         if (teleportInProgressMap.getOrDefault(playerId, false)) {
             player.sendMessage(Text.literal("Teleportation already in progress. Please wait.")
                     .formatted(Formatting.RED), false);
             return Command.SINGLE_SUCCESS;
         }
 
-        if (is_Rtp){
+        if (is_Rtp) {
             cooldownTime = ConfigManager.config.RTPCooldown;
         } else {
             cooldownTime = ConfigManager.config.SpawnCooldown;
         }
-
 
         if (SpawncooldownMap.containsKey(playerId)) {
             long lastUseTime = SpawncooldownMap.get(playerId);
@@ -82,9 +85,7 @@ public class SpawnARTPCommand {
             }
         }
 
-
         teleportInProgressMap.put(playerId, true);
-
 
         ServerWorld world;
         if (dimension.equalsIgnoreCase("nether")) {
@@ -97,7 +98,6 @@ public class SpawnARTPCommand {
             player.sendMessage(Text.literal("Invalid dimension. Using default Overworld.").formatted(Formatting.RED), false);
             world = Objects.requireNonNull(player.getServer()).getWorld(World.OVERWORLD); // Default to Overworld
         }
-
 
         startCountdownAndTeleport(player, world, searchAreaRadius, dimension);
 
@@ -132,7 +132,6 @@ public class SpawnARTPCommand {
                     teleportInProgressMap.put(player.getUuid(), false);
                     return;
                 }
-
 
                 int fadeInTicks = ConfigManager.config.FadeInTicks;
                 int stayTicks = ConfigManager.config.StayTicks;
@@ -182,8 +181,6 @@ public class SpawnARTPCommand {
         }
     }
 
-
-
     private static BlockPos findRandomSafePosition(World world, int radius) {
         int spawnX = world.getSpawnPos().getX();
         int spawnZ = world.getSpawnPos().getZ();
@@ -193,90 +190,157 @@ public class SpawnARTPCommand {
         int minZ = spawnZ - radius;
         int maxZ = spawnZ + radius;
 
-
-        int maxY = (world.getRegistryKey() == World.NETHER) ? 120 : world.getTopY();
-        int minY = 0;
-
         int attempts = 0;
         int maxAttempts = 20;
+
+        // Liste der blockierten Biome
+        Set<RegistryKey<Biome>> blockedBiomes = new HashSet<>();
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "ocean")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "deep_ocean")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "the_void")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "small_end_islands")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "cold_ocean")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "warm_ocean")));
 
         while (attempts < maxAttempts) {
             int x, y, z;
 
-            synchronized (random) {
-                x = random.nextInt(maxX - minX + 1) + minX;
-                z = random.nextInt(maxZ - minZ + 1) + minZ;
-                y = random.nextInt(maxY - minY + 1) + minY;
+            x = random.nextInt(maxX - minX + 1) + minX;
+            z = random.nextInt(maxZ - minZ + 1) + minZ;
+
+            BlockPos pos = new BlockPos(x, 0, z);
+
+            // Schritt 1: Prüfe das Biom über RegistryEntry
+            Chunk chunk = world.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+            if (chunk != null) {
+                // Zugriff auf das Biom über RegistryEntry
+                RegistryEntry<Biome> biomeEntry = world.getBiome(pos);
+
+                // Prüfe, ob das aktuelle Biom auf der Blacklist steht
+                if (blockedBiomes.contains(biomeEntry.getKey().orElse(null))) {
+                    // Wenn das Biom blockiert ist, wähle eine neue Position
+                    attempts++;
+                    continue;
+                }
             }
 
-            BlockPos pos = new BlockPos(x, y, z);
-            BlockPos safePos = findSafePosition((ServerWorld) world, pos, 2);
-            if (safePos != null) {
-                //  logger.info("save");
-                return safePos;
+            // Schritt 2: Dimension-spezifische Höhenprüfung
+            int height = 0;
+            if (world.getRegistryKey() == World.NETHER) {
+                // Spezielle Prüfung für den Nether: Verwende feste Y-Werte
+                height = getSafeYInNether(world, pos);  // Eine Methode, die die sichere Y-Position im Nether findet
+            } else if (world.getRegistryKey() == World.END) {
+                // Spezielle Prüfung für das End: Prüfe eine sichere Höhe manuell
+                height = getSafeYInEnd(world, pos);  // Eine Methode, die die sichere Y-Position im End findet
+            } else {
+                // Overworld: Verwende die Heightmap
+                height = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, pos.getX(), pos.getZ());
             }
+
+            // Schritt 3: Prüfe die sichere Position (nur Flüssigkeitssicherheitscheck)
+            if (height > 0) {
+                BlockPos safePos = findSafePosition((ServerWorld) world, new BlockPos(x, height, z), 2);
+                if (safePos != null) {
+                    return safePos;  // Sichere Position gefunden
+                }
+            }
+
             attempts++;
         }
-        //logger.info("No save");
-        return null;
+
+        return null;  // Keine sichere Position gefunden
     }
 
-    private static BlockPos findSafePosition(ServerWorld world, BlockPos pos, int radius) {
-        int maxY;
+    private static int getSafeYInNether(World world, BlockPos pos) {
+        int maxY = 120;  // Typische Obergrenze im Nether, unterhalb des Bedrock-Roofs
+        int minY = 10;   // Typische Untergrenze im Nether, oberhalb von Lava-Seen
 
-
-        if (world.getRegistryKey() == World.NETHER) {
-            maxY = 100;
-        } else if (world.getRegistryKey() == World.END) {
-            maxY = 100;
-        } else {
-
-            Chunk chunk = world.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-
-
-            pos = world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, pos);
-            // logger.info("Checking position :)");
-            // logger.info(pos.toString());
-
-
-            if (pos.getY() > 0 && isSafeFromLiquid(world, pos, radius)) {
-                return pos;
-            } else {
-                //    logger.info("Invalid or unsafe position returned by heightmap.");
-                return null;
-            }
-        }
-
-
-        int minY = 0;
         for (int y = maxY; y >= minY; y--) {
             BlockPos testPos = new BlockPos(pos.getX(), y, pos.getZ());
 
-
-            if (world.getBlockState(testPos.up()).isAir() &&
-                    world.getBlockState(testPos.down()).isSolid() &&
-                    isSafeFromLiquid(world, testPos, radius)) {
-                return testPos;
+            // Prüfen, ob der Block unterhalb solid ist und der Block darüber Luft
+            if (world.getBlockState(testPos).isSolidBlock(world, testPos) &&
+                    world.getBlockState(testPos.up()).isAir()) {
+                return y;  // Sichere Y-Position gefunden
             }
         }
-
-        return null;
+        return -1;  // Keine sichere Position gefunden
     }
 
-    private static boolean isSafeFromLiquid(World world, BlockPos pos, int radius) {
-        for (int x = pos.getX() - radius; x <= pos.getX() + radius; x++) {
-            for (int y = pos.getY() - radius; y <= pos.getY() + radius; y++) {
-                for (int z = pos.getZ() - radius; z <= pos.getZ() + radius; z++) {
-                    BlockPos checkPos = new BlockPos(x, y, z);
-                    FluidState fluidState = world.getFluidState(checkPos);
-                    if (!fluidState.isEmpty()) {
-                        //  logger.info("Liquid found at " + checkPos + " :(");
-                        return false;
-                    }
+    private static int getSafeYInEnd(World world, BlockPos pos) {
+        int maxY = 100;  // Typische Obergrenze im End
+        int minY = 0;   // Typische Untergrenze im End
+
+        for (int y = maxY; y >= minY; y--) {
+            BlockPos testPos = new BlockPos(pos.getX(), y, pos.getZ());
+            if (world.getBlockState(testPos).isSolidBlock(world, testPos) && world.getBlockState(testPos.up()).isAir()) {
+                // Solider Block unten, Luft oben => Sicherer Ort
+                return y;
+            }
+        }
+        return -1;  // Keine sichere Position gefunden
+    }
+
+    private static BlockPos findSafePosition(ServerWorld world, BlockPos pos, int radius) {
+        // Keine Höhenabfrage, nur Flüssigkeitsprüfung
+        if (isSafeFromLiquid(world, pos)) {
+            return pos;
+        } else {
+            return null;
+        }
+    }
+
+    // Optimierte Prüfung auf Flüssigkeit, inklusive der Blöcke neben dem Spieler
+    private static boolean isSafeFromLiquid(World world, BlockPos pos) {
+        int x = pos.getX();
+        int y = pos.getY();
+        int z = pos.getZ();
+
+        // Prüfe den Block unter dem Spieler
+        BlockPos belowPos = new BlockPos(x, y - 1, z);
+        if (!world.getFluidState(belowPos).isEmpty()) {
+            return false;  // Flüssigkeit im Bodenblock gefunden
+        }
+
+        // Prüfe den Block, auf dem der Spieler steht
+        BlockPos currentPos = new BlockPos(x, y, z);
+        if (!world.getFluidState(currentPos).isEmpty()) {
+            return false;  // Flüssigkeit im aktuellen Block gefunden
+        }
+
+        // Prüfe den Block über dem Spieler
+        BlockPos abovePos = new BlockPos(x, y + 1, z);
+        if (!world.getFluidState(abovePos).isEmpty()) {
+            return false;  // Flüssigkeit im oberen Block gefunden
+        }
+
+        // Prüfe die angrenzenden Blöcke in derselben Höhe (X- und Z-Koordinaten)
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+
+                // Seitliche Blöcke in derselben Höhe wie der Spieler
+                BlockPos sidePos = new BlockPos(x + dx, y, z + dz);
+                if (!world.getFluidState(sidePos).isEmpty()) {
+                    return false;  // Flüssigkeit in einem angrenzenden Block gefunden
+                }
+
+                // Seitliche Blöcke direkt über dem Spieler
+                BlockPos sideAbovePos = new BlockPos(x + dx, y + 1, z + dz);
+                if (!world.getFluidState(sideAbovePos).isEmpty()) {
+                    return false;  // Flüssigkeit in einem angrenzenden Block direkt über dem Spieler gefunden
+                }
+
+                // Seitliche Blöcke direkt unter dem Spieler
+                BlockPos sideBelowPos = new BlockPos(x + dx, y - 1, z + dz);
+                if (!world.getFluidState(sideBelowPos).isEmpty()) {
+                    return false;  // Flüssigkeit in einem angrenzenden Block direkt unter dem Spieler gefunden
                 }
             }
         }
-        // logger.info("No liquids found");
-        return true;
+
+        return true;  // Keine Flüssigkeit gefunden, Position ist sicher
     }
 }
