@@ -16,8 +16,13 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.World;
+import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.Chunk;
-import java.util.concurrent.ThreadLocalRandom;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.Registry;
+import net.minecraft.util.Identifier;
+import net.minecraft.registry.RegistryKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -185,59 +190,104 @@ public class SpawnARTPCommand {
         int minZ = spawnZ - radius;
         int maxZ = spawnZ + radius;
 
-        int maxY = (world.getRegistryKey() == World.NETHER) ? 120 : world.getTopY();
-        int minY = 0;
-
         int attempts = 0;
         int maxAttempts = 20;
+
+        // Liste der blockierten Biome
+        Set<RegistryKey<Biome>> blockedBiomes = new HashSet<>();
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "ocean")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "deep_ocean")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "the_void")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "small_end_islands")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "cold_ocean")));
+        blockedBiomes.add(RegistryKey.of(RegistryKeys.BIOME, Identifier.of("minecraft", "warm_ocean")));
 
         while (attempts < maxAttempts) {
             int x, y, z;
 
             x = random.nextInt(maxX - minX + 1) + minX;
             z = random.nextInt(maxZ - minZ + 1) + minZ;
-            y = random.nextInt(maxY - minY + 1) + minY;
 
-            BlockPos pos = new BlockPos(x, y, z);
-            BlockPos safePos = findSafePosition((ServerWorld) world, pos, 2);
-            if (safePos != null) {
-                return safePos;
+            BlockPos pos = new BlockPos(x, 0, z);
+
+            // Schritt 1: Prüfe das Biom über RegistryEntry
+            Chunk chunk = world.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+            if (chunk != null) {
+                // Zugriff auf das Biom über RegistryEntry
+                RegistryEntry<Biome> biomeEntry = world.getBiome(pos);
+
+                // Prüfe, ob das aktuelle Biom auf der Blacklist steht
+                if (blockedBiomes.contains(biomeEntry.getKey().orElse(null))) {
+                    // Wenn das Biom blockiert ist, wähle eine neue Position
+                    attempts++;
+                    continue;
+                }
             }
+
+            // Schritt 2: Dimension-spezifische Höhenprüfung
+            int height = 0;
+            if (world.getRegistryKey() == World.NETHER) {
+                // Spezielle Prüfung für den Nether: Verwende feste Y-Werte
+                height = getSafeYInNether(world, pos);  // Eine Methode, die die sichere Y-Position im Nether findet
+            } else if (world.getRegistryKey() == World.END) {
+                // Spezielle Prüfung für das End: Prüfe eine sichere Höhe manuell
+                height = getSafeYInEnd(world, pos);  // Eine Methode, die die sichere Y-Position im End findet
+            } else {
+                // Overworld: Verwende die Heightmap
+                height = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, pos.getX(), pos.getZ());
+            }
+
+            // Schritt 3: Prüfe die sichere Position (nur Flüssigkeitssicherheitscheck)
+            if (height > 0) {
+                BlockPos safePos = findSafePosition((ServerWorld) world, new BlockPos(x, height, z), 2);
+                if (safePos != null) {
+                    return safePos;  // Sichere Position gefunden
+                }
+            }
+
             attempts++;
         }
-        return null;
+
+        return null;  // Keine sichere Position gefunden
     }
 
-    private static BlockPos findSafePosition(ServerWorld world, BlockPos pos, int radius) {
-        int maxY;
+    private static int getSafeYInNether(World world, BlockPos pos) {
+        int maxY = 120;  // Typische Obergrenze im Nether, unterhalb des Bedrock-Roofs
+        int minY = 10;   // Typische Untergrenze im Nether, oberhalb von Lava-Seen
 
-        if (world.getRegistryKey() == World.NETHER) {
-            maxY = 100;
-        } else if (world.getRegistryKey() == World.END) {
-            maxY = 100;
-        } else {
-            Chunk chunk = world.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-            pos = world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, pos);
-
-            if (pos.getY() > 0 && isSafeFromLiquid(world, pos)) {
-                return pos;
-            } else {
-                return null;
-            }
-        }
-
-        int minY = 0;
         for (int y = maxY; y >= minY; y--) {
             BlockPos testPos = new BlockPos(pos.getX(), y, pos.getZ());
 
-            if (world.getBlockState(testPos.up()).isAir() &&
-                    world.getBlockState(testPos.down()).isSolid() &&
-                    isSafeFromLiquid(world, testPos)) {
-                return testPos;
+            // Prüfen, ob der Block unterhalb solid ist und der Block darüber Luft
+            if (world.getBlockState(testPos).isSolidBlock(world, testPos) &&
+                    world.getBlockState(testPos.up()).isAir()) {
+                return y;  // Sichere Y-Position gefunden
             }
         }
+        return -1;  // Keine sichere Position gefunden
+    }
 
-        return null;
+    private static int getSafeYInEnd(World world, BlockPos pos) {
+        int maxY = 100;  // Typische Obergrenze im End
+        int minY = 0;   // Typische Untergrenze im End
+
+        for (int y = maxY; y >= minY; y--) {
+            BlockPos testPos = new BlockPos(pos.getX(), y, pos.getZ());
+            if (world.getBlockState(testPos).isSolidBlock(world, testPos) && world.getBlockState(testPos.up()).isAir()) {
+                // Solider Block unten, Luft oben => Sicherer Ort
+                return y;
+            }
+        }
+        return -1;  // Keine sichere Position gefunden
+    }
+
+    private static BlockPos findSafePosition(ServerWorld world, BlockPos pos, int radius) {
+        // Keine Höhenabfrage, nur Flüssigkeitsprüfung
+        if (isSafeFromLiquid(world, pos)) {
+            return pos;
+        } else {
+            return null;
+        }
     }
 
     // Optimierte Prüfung auf Flüssigkeit, inklusive der Blöcke neben dem Spieler
