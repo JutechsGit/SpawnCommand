@@ -268,8 +268,8 @@ public class SpawnARTPCommand {
     }
 
     private static int getSafeYInEnd(World world, BlockPos pos) {
-        int maxY = 100;  // Typische Obergrenze im End
-        int minY = 0;   // Typische Untergrenze im End
+        int maxY = 120;  // Typische Obergrenze im End
+        int minY = -2;   // Typische Untergrenze im End
 
         for (int y = maxY; y >= minY; y--) {
             BlockPos testPos = new BlockPos(pos.getX(), y, pos.getZ());

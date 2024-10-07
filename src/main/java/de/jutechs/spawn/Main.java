@@ -39,9 +39,9 @@ public class Main implements ModInitializer {
         SuggestionProvider<ServerCommandSource> dimensionSuggestions = (context, builder) ->
                 suggestMatching(new String[]{"overworld", "nether", "end"}, builder);
 
-        // Registrierung des /spawn-Befehls mit automatischer Dimensionswahl
+        // Registrierung des /sp-Befehls mit automatischer Dimensionswahl
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
-                dispatcher.register(literal("spawn")
+                dispatcher.register(literal("sp")
                         .then(argument("dimension", StringArgumentType.string())
                                 .suggests(dimensionSuggestions)
                                 .executes(context -> {
