@@ -10,5 +10,15 @@ public class ModConfig {
     public boolean CountdownInChat = true;
     public int FadeInTicks = 0;
     public int StayTicks = 40;
-    public int FadeOutTicks= 10;
+    public int FadeOutTicks = 10;
+
+    // New configuration options
+    public int CacheSize = 10;
+    public int OverworldMaxY = 200;
+    public int OverworldMinY = 64;
+    public int NetherMaxY = 120;
+    public int NetherMinY = 10;
+    public int EndMaxY = 100;
+    public int EndMinY = 0;
+    public int LiquidCheckRadius = 1;
 }
